@@ -29,6 +29,8 @@ first_kill = ""
 first_nade = ""
 first_knife = ""
 
+gear_restrictions = ""
+
 def live_tail(log):
     log.seek(0, 2)
     while 1:
@@ -39,7 +41,7 @@ def live_tail(log):
         yield line
 
 def raw_command(cmd):
-    time.sleep(0.2)
+    time.sleep(0.3)
     message = b"\xff\xff\xff\xff" + ("%s\n" % cmd).encode("UTF-8")
     server.send(message)
     return server.recv(8096).replace(b"\xff\xff\xff\xff", b"").rstrip(b"\n")
@@ -95,24 +97,29 @@ def update_spree(killer, victim):
     victim.longest_streak = 0
 
 def start_map(map_name):
+    global gear_restrictions
     print("===== Map: {}   ".format(map_name), end="")
     if map_name in LOW_GRAV_MAPS:
         print("lowgrav ", end="")
         rcon("set g_gravity {}".format(LOW_GRAV))
+        time.sleep(2)
 
     prob = random.random()
-    if prob < 0.1:
-        print("sniper ", end="")
-        rcon("say \"^3Random weapon assortment for this match: ^4Sniper rifles, MAC, pistols and grenades\"")
+    if prob < 0.05:
+        gear_restrictions = "sniper"
+        time.sleep(1)
         rcon("set g_gear \"HIJLMace\"")
-    elif 0.1 <= prob < 0.2:
-        print("pistols ", end="")
-        rcon("say \"^3Random weapon assortment for this match: ^4Pistols, SPAS, MAC and grenades\"")
+    elif 0.05 <= prob < 0.1:
+        gear_restrictions = "pistols"
+        time.sleep(1)
         rcon("set g_gear \"IJLMNZace\"")
-    elif 0.2 <= prob < 1:
+    elif 0.1 <= prob < 1:
+        gear_restrictions = ""
         #rcon("say \"^3Random weapon assortment for this match: ^4All weapons\"")
         rcon("set g_gear \"\"")
-    print("")
+        time.sleep(1)
+    print(gear_restrictions)
+    time.sleep(2)
 
 ####
 
@@ -250,6 +257,7 @@ def execute_command(game_time, event, args):
 
     elif event == "InitGame":
         map_name, game_type, frag_limit, time_limit = args
+        time.sleep(5)
         start_map(map_name)
     
     elif event == "ShutdownGame":
@@ -279,6 +287,12 @@ def execute_command(game_time, event, args):
 
     elif event == "ClientBegin":
         num = args
+        player = players[num]
+        if gear_restrictions == "sniper":
+            rcon("tell {} \"^3Random weapon assortment for this match: ^4Sniper rifles, MAC, pistols and grenades\"".format(player.name))
+        elif gear_restrictions == "pistols":
+            rcon("tell {} \"^3Random weapon assortment for this match: ^4Pistols, SPAS, MAC and grenades\"".format(player.name))
+        time.sleep(0.5)
 
     elif event == "ClientUserinfoChanged":
         num, name = args
@@ -336,6 +350,7 @@ def remove_player(num):
 
 server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 server.connect((ADDRESS, PORT))
+server.settimeout(60)
 
 ip_db = pygeoip.GeoIP(GEOIP_PATH)
 
