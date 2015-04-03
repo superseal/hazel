@@ -3,16 +3,30 @@ import time
 import re
 
 import pygeoip
-from game_vars import hit_zone, hit_item, death_cause
+from game_consts import HIT_ZONE, HIT_ITEM, DEATH_CAUSE, WORLD_NUM
+from config import ADDRESS, PORT, PASSWORD, GEOIP_PATH, LOG_PATH
 
-(ADDRESS, PORT) = ("192.155.94.108", 27960)
-password = "testserver"
+
+class Player():
+    # Can't use a proper init function because the object needs to be created at ClientConnect
+    def __init__(self):
+        self.name = ""
+        self.address = ""
+        self.score = 0
+        # ClientUserinfo always appears twice, use this to avoid double-printing
+        self.connected = False
+        # Stats
+        self.longest_streak = 0
+        self.headshots = 0
+        self.knife_kills = 0
+        self.nade_kills = 0
 
 players = {}
-stats = {}
-first_kill, first_nade, first_knife = "", "", ""
 
-ip_db = pygeoip.GeoIP("/home/urt/rcon_bot/pygeoip/GeoIP.dat")
+# Global stats (not using a singleton just for this)
+first_kill = ""
+first_nade = ""
+first_knife = ""
 
 def live_tail(log):
     log.seek(0, 2)
@@ -30,36 +44,52 @@ def raw_command(cmd):
     return server.recv(8096).replace(b"\xff\xff\xff\xff", b"").rstrip(b"\n")
 
 def rcon(cmd):
-    return raw_command("rcon {} {}".format(password, cmd))
+    return raw_command("rcon {} {}".format(PASSWORD, cmd))
 
 ####
 
 def reset_stats():
-    global first_kill, first_nade, first_knife, stats
-    print("Resetting stats")
-    first_kill, first_nade, first_knife = "", "", ""
-    for key in stats.keys():
-        stats[key] = [0, 0, 0]
+    global first_kill, first_nade, first_knife
+    first_kill = ""
+    first_nade = ""
+    first_knife = ""
 
-def add_score(kill_type, killer_num):
-    global stats
+    for num, p in players.items():
+        p.headshots = 0
+        p.knife_kills = 0
+        p.nade_kills = 0
+        p.longest_streak = 0
 
+def inc_stat(kill_type, killer):
     if kill_type == "headshot":
-        index = 0
-        kill_type = "headshots"
+        killer.headshots += 1
+        kill_name = "headshots"
+        points = killer.headshots
     elif kill_type == "nade":
-        index = 1
-        kill_type = "nade kills"
+        killer.nade_kills += 1
+        kill_name = "nade kills"
+        points = killer.nade_kills
     elif kill_type == "knife":
-        index = 2
-        kill_type = "knife kills"
+        killer.knife_kills += 1
+        kill_name = "knife kills"
+        points = killer.knife_kills
     
-    player_name = players[killer_num][0]
-    points = stats[killer_num][index]
-    points += 1
-    stats[killer_num][index] += 1
     if (points % 5) == 0:
-        rcon("say \"^4{} has {} {}\"".format(player_name, points, kill_type))
+        rcon("say \"^7{} has {} {}\"".format(killer.name, points, kill_name))
+    else:
+        rcon("tell \"{}\" \"^7You have {} {}\"".format(killer.name, points, kill_name))
+
+def update_spree(killer, victim):
+    killer.longest_streak += 1
+
+    if (killer.longest_streak % 5) == 0:
+        rcon("say \"^2{} is on a killing spree ({} kills)\"".format(killer.name, killer.longest_streak))
+
+    if victim.longest_streak >= 5:
+        rcon("say \"^1{} stopped {}'s killing spree ({} kills)\"".format(killer.name, victim.name, victim.longest_streak))
+    
+    victim.longest_streak = 0
+
 ####
 
 def parse_event(line):
@@ -73,46 +103,18 @@ def parse_event(line):
     return game_time, event, raw_args
 
 def parse_args(event, args):
+    # ClientUserinfo contains an IP and a port, keep the colon
+    # The colon is useless in other commands
     if event != "ClientUserinfo":
         args = args.replace(":", "")
 
-    # players[x] = (name, score, address, ping)
-    # stats[x] = [headshots, nade_kills, knife_kills]
-    if event == "Kill":
-        killer_num, victim_num, cause, message = args.split(" ", 3)
-        killer_num = int(killer_num)
-        victim_num = int(victim_num)
-        cause = int(cause)
-        cause = death_cause[cause]
-        if '<world>' in message or cause in ["MOD_FALLING", "MOD_WATER", "MOD_LAVA", "MOD_TRIGGER_HURT"]:
-            killer = 'world'
-        else:
-            killer = players[killer_num][0]
-        victim = players[victim_num][0]
-        return [killer_num, killer, victim, cause]
-
-    elif event == "Hit":
-        victim_num, attacker_num, zone, weapon, message = args.split(" ", 4)
-        victim_num = int(victim_num)
-        attacker_num = int(attacker_num)
-        zone = int(zone)
-        weapon = int(weapon)
-        attacker = players[attacker_num][0]
-        victim = players[victim_num][0]
-        zone = hit_zone[zone]
-        weapon = hit_item[weapon]
-        return [attacker_num, attacker, victim, zone, weapon]
-
-    elif event == "say":
-        player_num, player_name, message = args.split(" ", 2)
-        return [player_num, player_name, message]
-
-    elif event == "InitGame":
+    if event == "InitGame":
+        # Partition arguments into tuples
         args = args.lstrip(" ").split("\\")
         args = [args[i:i + 2] for i in range(1, len(args), 2)]
+
         var_names = ("mapname", "g_gametype", "fraglimit", "timelimit")
         cvars = {cvar: cvalue for (cvar, cvalue) in args if cvar in var_names}
-        #print("cvars {}".format(cvars))
         return [cvars[v] for v in var_names]
 
     elif event == "ShutdownGame":
@@ -123,135 +125,197 @@ def parse_args(event, args):
         return player_num
 
     elif event == "ClientUserinfo":
-        if "challenge" in args:
-            num = int(args.split()[0])
-            args = args.split("\\")
-            args = [args[i:i + 2] for i in range(1, len(args), 2)]
-            var_names = ("ip", "name")
-            cvars = {cvar: cvalue for (cvar, cvalue) in args if cvar in var_names}
-            #print("cvars {}".format(cvars))
+        num = int(args.split()[0])
+        # Debug 
+        raw_args = args
+        # Partition arguments into tuples
+        args = args.split("\\")
+        args = [args[i:i + 2] for i in range(1, len(args), 2)]
+
+        var_names = ("ip", "name")
+        cvars = {cvar: cvalue for (cvar, cvalue) in args if cvar in var_names}
+        try:
             return [num] + [cvars[v] for v in var_names]
+        except:
+            print("Name failed, got {}".format(raw_args))
+            print("Split args are {}".format(args))
+            return [num, "address derp", players[num].name]
 
     elif event == "ClientUserinfoChanged":
-        num = args.split()
+        num = int(args.split()[0])
         name = args.split("\\")[1]
         return [num, name]
+    
+    elif event == "Kill":
+        killer_num, victim_num, cause, message = args.split(" ", 3)
+        killer_num, victim_num, cause = int(killer_num), int(victim_num), int(cause)
         
-def execute_command(game_time, event, args):
-    global stats, first_kill, first_nade, first_knife
+        cause = DEATH_CAUSE[cause]
+        if '<world>' in message or cause in ["MOD_FALLING", "MOD_WATER", "MOD_LAVA", "MOD_TRIGGER_HURT"]:
+            killer_num = WORLD_NUM
 
-    # players[x] = (name, score, address, ping)
-    # stats[x] = [headshots, nade_kills, knife_kills]
-    if event == "Kill":
-        killer_num, killer, victim, cause = args
-        if not first_kill and killer != victim:
-            rcon("bigtext \"^4First kill: ^3{}\"".format(killer))
-            first_kill = killer
-            time.sleep(1)
-        elif cause in ["UT_MOD_HEGRENADE", "UT_MOD_HK69"] and killer != victim:
-            if not first_nade:
-                rcon("bigtext \"^4First nade kill: ^3{}\"".format(killer))
-                first_nade = killer
-                time.sleep(1)
-            add_score("nade", killer_num)
-        elif cause in ["UT_MOD_KNIFE", "UT_MOD_KNIFE_THROWN"] :
-            if not first_knife:
-                rcon("bigtext \"^4First knife kill: ^3{}\"".format(killer))
-                first_knife = killer
-                time.sleep(1)
-            add_score("knife", killer_num)
-        print("{} killed {} with {}".format(killer, victim, cause))
+        return [killer_num, victim_num, cause]
 
     elif event == "Hit":
-        attacker_num, attacker, victim, zone, weapon = args
-        print("{} hit {} in {} with {}".format(attacker, victim, zone, weapon))
-        if zone in ["HEAD", "HELMET"]:
-            add_score("headshot", attacker_num)
+        victim_num, attacker_num, zone, weapon, message = args.split(" ", 4)
+        victim_num, attacker_num, zone, weapon = int(victim_num), int(attacker_num), int(zone), int(weapon)
+        
+        zone = HIT_ZONE[zone]
+        weapon = HIT_ITEM[weapon]
+        return [attacker_num, victim_num, zone, weapon]
 
     elif event == "say":
-        player_num, player_name, message = args
-        print("{} says: {}".format(player_name, message))
+        player_num, player_name, message = args.split(" ", 2)
+        player_num = int(player_num)
 
-    elif event == "ShutdownGame":
-        reset_stats()
-        print("Changing map...")
-        time.sleep(5)
+        return [player_num, message]
+
+def execute_command(game_time, event, args):
+    global players, first_kill, first_nade, first_knife
+
+    if event == "Hit":
+        attacker_num, victim_num, zone, weapon = args
+       
+        attacker = players[attacker_num]
+        victim = players[victim_num]
+
+        #print("{} hit {} in {} with {}".format(attacker.name, victim.name, zone, weapon))
+        if zone in ["HEAD", "HELMET"] and weapon != "UT_MOD_SPAS":
+            inc_stat("headshot", attacker)
+            #print("{} has {} headshots".format(attacker.name, players[attacker_num].headshots))
+
+    elif event == "Kill":
+        killer_num, victim_num, cause = args
+
+        killer = players[killer_num]
+        victim = players[victim_num]
+
+        # Discard suicides
+        if not first_kill and killer.name != victim.name and killer.name != "world":
+            rcon("bigtext \"^4First kill: ^3{}\"".format(killer.name))
+            first_kill = killer
+            time.sleep(1)
+        
+        # First kill could be a knife/nade kill
+        if cause in ["UT_MOD_HEGRENADE", "UT_MOD_HK69"] and killer.name != victim.name:
+            if not first_nade:
+                rcon("bigtext \"^4First nade kill: ^3{}\"".format(killer.name))
+                first_nade = killer
+                time.sleep(1)
+            inc_stat("nade", killer)
+            #print("{} has {} nade kills".format(killer.name, players[killer_num].nade_kills))
+        elif cause in ["UT_MOD_KNIFE", "UT_MOD_KNIFE_THROWN"] :
+            if not first_knife:
+                rcon("bigtext \"^4First knife kill: ^3{}\"".format(killer.name))
+                first_knife = killer
+                time.sleep(1)
+            inc_stat("knife", killer)
+            #print("* {} has {} knife kills".format(killer.name, players[killer_num].knife_kills))
+
+        update_spree(killer, victim)
+        print("x {} killed {} with {}".format(killer.name, victim.name, cause))
+
+    elif event == "say":
+        num, message = args
+        player = players[num]
+        print("   {} says: {}".format(player.name, message))
 
     elif event == "InitGame":
         map_name, game_type, frag_limit, time_limit = args
-        print("Map name: {} Gametype {}, {} kills, {} minutes".format(map_name, game_type, frag_limit, time_limit))
+        print("====== Map: {} ======".format(map_name))
+    
+    elif event == "ShutdownGame":
+        reset_stats()
+        time.sleep(5)
 
     elif event == "ClientConnect":
         num = args
-        headshots, nade_kills, knife_kills = 0, 0, 0
-        stats[int(num)] = [headshots, nade_kills, knife_kills]
+        players[num] = Player()
+    
+    elif event == "ClientUserinfo":
+        num, address, name = args
+        player = players[num]
+        if not player.connected:
+            address = address.split(":")[0]
+            country = ip_db.country_name_by_addr(address)
+            # Remove color codes
+            name = re.sub(r"\^\d", "", name)
+            print(">>> {} connected from {}".format(name, country))
+            player.connected = True
 
     elif event == "ClientDisconnect":
         num = args
-        print("Player {} is disconnecting".format(players[num][0]))
+        print("<<< {} disconnected".format(players[num].name))
         remove_player(num)
-        #print_player_info()
 
     elif event == "ClientBegin":
         num = args
-        update_player_info()
-        print_player_info()
-        name = players[num][0]
-        ip = players[num][2]
-        country = ip_db.country_name_by_addr(ip)
-        print("Player {} - {} connected from {}".format(num, name, country))
+        name, address, score = get_game_status()[num]
+        players[num].name = name
+        players[num].address = address
+        players[num].score = score
         # does everyone really need to know this
         #rcon("say {} connected from {}".format(name, country))
 
-    elif event == "ClientUserinfo":
-        if args:
-            num, ip, name = args
-            ip = ip.split(":")[0]
-
     elif event == "ClientUserinfoChanged":
         num, name = args
-        update_player_info()
-        #print_player_info()
 
 ####
 
-def update_player_info():
-    global players, stats 
-    _, _, _, _, *player_info  = [s.decode("UTF-8") for s in rcon("status").split(b"\n")]
+def get_game_status():
+    _, _, _, _, *player_info = [s.decode("UTF-8") for s in rcon("status").split(b"\n")]
 
+    status = {}
     for p in player_info:
         num, score, ping, rest = p.split(None, 3)
+        num = int(num)
         # Parse nicknames with spaces
         name, lastmsg, address, qport, rate = rest.rsplit(None, 4)
         # Remove color codes
         name = re.sub(r"\^\d", "", name)
         # Drop port
         address = address.split(":")[0]
-        players[int(num)] = (name, score, address, ping)
-        stats[int(num)] = [0, 0, 0]
+        status[num] = (name, address, score)
+    return status
+
+def create_players(status):
+    global players
+
+    # Having a "world" player makes Hit and Kill logic simpler
+    players[WORLD_NUM] = Player()
+    players[WORLD_NUM].name = "world"
+    players[WORLD_NUM].address = "0.0.0.0"
+
+    for num, info in status.items():
+        name, address, score = info
+        players[num] = Player()
+        # Don't blame me, read the comment in the Player class
+        players[num].name = name
+        players[num].address = address
+        players[num].score = score
 
 def print_player_info():
-    print("Players: {}".format(players))
-    for num, info in players.items():
-        name, score, address, ping = info
-        print("#{} - {}, {} points [{} - {}ms]".format(num, name, score, address, ping))
+    for num, p in players.items():
+        if num != WORLD_NUM:
+            print("#{} - {}, {}, {} points".format(num, p.name, p.address, p.score))
 
 def remove_player(num):
     global players
-    del players[int(num)]
-    del stats[int(num)]
+    del players[num]
 
 ####
 
 server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 server.connect((ADDRESS, PORT))
-server.settimeout(2)
-update_player_info()
-print_player_info()
-reset_stats()
+server.settimeout(60)
 
-log = open("/home/urt/urt42/q3ut4/games.log", "r")
-print("Listening...")
+ip_db = pygeoip.GeoIP(GEOIP_PATH)
+
+status = get_game_status()
+create_players(status)
+print_player_info()
+
+log = open(LOG_PATH, "r")
 
 for line in live_tail(log):
     # Parsing

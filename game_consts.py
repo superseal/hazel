@@ -1,4 +1,6 @@
-hit_zone = {
+WORLD_NUM = -100
+
+HIT_ZONE = {
         0: "HEAD",
         1: "HEAD", 
         2: "HELMET", 
@@ -15,7 +17,7 @@ hit_zone = {
         13: "LEFT_FOOT",
         14: "RIGHT_FOOT"}
 
-hit_item = {
+HIT_ITEM = {
         1: "UT_MOD_KNIFE",
         2: "UT_MOD_BERETTA",
         3: "UT_MOD_DEAGLE",
@@ -36,7 +38,7 @@ hit_item = {
         24: "UT_MOD_KICKED",
         25: "UT_MOD_KNIFE_THROWN"}
 
-death_cause = {
+DEATH_CAUSE = {
         1: "MOD_WATER",
         3: "MOD_LAVA",
         5: "UT_MOD_TELEFRAG",
