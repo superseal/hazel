@@ -1,11 +1,12 @@
+#!/usr/bin/env python3
 import socket
 import time
 import re
+import random
 
 import pygeoip
 from game_consts import HIT_ZONE, HIT_ITEM, DEATH_CAUSE, WORLD_NUM
-from config import ADDRESS, PORT, PASSWORD, GEOIP_PATH, LOG_PATH
-
+from config import ADDRESS, PORT, PASSWORD, GEOIP_PATH, LOG_PATH, LOW_GRAV, LOW_GRAV_MAPS
 
 class Player():
     # Can't use a proper init function because the object needs to be created at ClientConnect
@@ -86,9 +87,32 @@ def update_spree(killer, victim):
         rcon("say \"^2{} is on a killing spree ({} kills)\"".format(killer.name, killer.longest_streak))
 
     if victim.longest_streak >= 5:
-        rcon("say \"^1{} stopped {}'s killing spree ({} kills)\"".format(killer.name, victim.name, victim.longest_streak))
+        if killer.name == victim.name or killer.name == "world":
+            rcon("say \"^1{} stopped their own killing spree ({} kills)\"".format(victim.name, victim.longest_streak))
+        else:
+            rcon("say \"^1{} stopped {}'s killing spree ({} kills)\"".format(killer.name, victim.name, victim.longest_streak))
     
     victim.longest_streak = 0
+
+def start_map(map_name):
+    print("===== Map: {}   ".format(map_name), end="")
+    if map_name in LOW_GRAV_MAPS:
+        print("lowgrav ", end="")
+        rcon("set g_gravity {}".format(LOW_GRAV))
+
+    prob = random.random()
+    if prob < 0.1:
+        print("sniper ", end="")
+        rcon("say \"^3Random weapon assortment for this match: ^4Sniper rifles, MAC, pistols and grenades\"")
+        rcon("set g_gear \"HIJLMace\"")
+    elif 0.1 <= prob < 0.2:
+        print("pistols ", end="")
+        rcon("say \"^3Random weapon assortment for this match: ^4Pistols, SPAS, MAC and grenades\"")
+        rcon("set g_gear \"IJLMNZace\"")
+    elif 0.2 <= prob < 1:
+        #rcon("say \"^3Random weapon assortment for this match: ^4All weapons\"")
+        rcon("set g_gear \"\"")
+    print("")
 
 ####
 
@@ -134,6 +158,10 @@ def parse_args(event, args):
 
         var_names = ("ip", "name")
         cvars = {cvar: cvalue for (cvar, cvalue) in args if cvar in var_names}
+        # Remove color codes
+        cvars["name"] = re.sub(r"\^\d", "", cvars["name"])
+        # Strip port from IP address
+        cvars["ip"] = cvars["ip"].split(":")[0]
         try:
             return [num] + [cvars[v] for v in var_names]
         except:
@@ -204,7 +232,7 @@ def execute_command(game_time, event, args):
                 time.sleep(1)
             inc_stat("nade", killer)
             #print("{} has {} nade kills".format(killer.name, players[killer_num].nade_kills))
-        elif cause in ["UT_MOD_KNIFE", "UT_MOD_KNIFE_THROWN"] :
+        elif cause in ["UT_MOD_KNIFE", "UT_MOD_KNIFE_THROWN"]:
             if not first_knife:
                 rcon("bigtext \"^4First knife kill: ^3{}\"".format(killer.name))
                 first_knife = killer
@@ -213,20 +241,20 @@ def execute_command(game_time, event, args):
             #print("* {} has {} knife kills".format(killer.name, players[killer_num].knife_kills))
 
         update_spree(killer, victim)
-        print("x {} killed {} with {}".format(killer.name, victim.name, cause))
+        print("{} killed {} with {}".format(killer.name, victim.name, cause))
 
     elif event == "say":
         num, message = args
         player = players[num]
-        print("   {} says: {}".format(player.name, message))
+        print("  {} says: {}".format(player.name, message))
 
     elif event == "InitGame":
         map_name, game_type, frag_limit, time_limit = args
-        print("====== Map: {} ======".format(map_name))
+        start_map(map_name)
     
     elif event == "ShutdownGame":
         reset_stats()
-        time.sleep(5)
+        time.sleep(1)
 
     elif event == "ClientConnect":
         num = args
@@ -234,28 +262,23 @@ def execute_command(game_time, event, args):
     
     elif event == "ClientUserinfo":
         num, address, name = args
+
         player = players[num]
+        players[num].name = name
+        players[num].address = address
         if not player.connected:
-            address = address.split(":")[0]
             country = ip_db.country_name_by_addr(address)
-            # Remove color codes
-            name = re.sub(r"\^\d", "", name)
             print(">>> {} connected from {}".format(name, country))
             player.connected = True
 
     elif event == "ClientDisconnect":
         num = args
-        print("<<< {} disconnected".format(players[num].name))
+        player = players[num]
+        print("<<< {} disconnected".format(player.name))
         remove_player(num)
 
     elif event == "ClientBegin":
         num = args
-        name, address, score = get_game_status()[num]
-        players[num].name = name
-        players[num].address = address
-        players[num].score = score
-        # does everyone really need to know this
-        #rcon("say {} connected from {}".format(name, country))
 
     elif event == "ClientUserinfoChanged":
         num, name = args
@@ -263,7 +286,7 @@ def execute_command(game_time, event, args):
 ####
 
 def get_game_status():
-    _, _, _, _, *player_info = [s.decode("UTF-8") for s in rcon("status").split(b"\n")]
+    _, map_name, _, _, *player_info = [s.decode("UTF-8") for s in rcon("status").split(b"\n")]
 
     status = {}
     for p in player_info:
@@ -276,7 +299,9 @@ def get_game_status():
         # Drop port
         address = address.split(":")[0]
         status[num] = (name, address, score)
-    return status
+    
+    map_name = map_name.split()[1]
+    return map_name, status
 
 def create_players(status):
     global players
@@ -295,6 +320,10 @@ def create_players(status):
         players[num].score = score
 
 def print_player_info():
+    if len(players) <= 1:
+        print("   (no players)")
+        return
+
     for num, p in players.items():
         if num != WORLD_NUM:
             print("#{} - {}, {}, {} points".format(num, p.name, p.address, p.score))
@@ -307,13 +336,14 @@ def remove_player(num):
 
 server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 server.connect((ADDRESS, PORT))
-server.settimeout(60)
 
 ip_db = pygeoip.GeoIP(GEOIP_PATH)
 
-status = get_game_status()
-create_players(status)
+map_name, player_info = get_game_status()
+create_players(player_info)
+print("Players online:")
 print_player_info()
+start_map(map_name)
 
 log = open(LOG_PATH, "r")
 
