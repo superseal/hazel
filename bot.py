@@ -138,7 +138,7 @@ def parse_args(event, args):
     # The colon is useless in other commands
     if event != "ClientUserinfo":
         args = args.replace(":", "")
-
+    
     if event == "InitGame":
         # Partition arguments into tuples
         args = args.lstrip(" ").split("\\")
@@ -207,6 +207,8 @@ def parse_args(event, args):
 
 def execute_command(game_time, event, args):
     global players, first_kill, first_nade, first_knife
+    
+    timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
 
     if event == "Hit":
         attacker_num, victim_num, zone, weapon = args
@@ -248,12 +250,12 @@ def execute_command(game_time, event, args):
             #print("* {} has {} knife kills".format(killer.name, players[killer_num].knife_kills))
 
         update_spree(killer, victim)
-        print("{} killed {} with {}".format(killer.name, victim.name, cause))
+        print("{} {} killed {} with {}".format(timestamp, killer.name, victim.name, cause))
 
     elif event == "say":
         num, message = args
         player = players[num]
-        print("  {} says: {}".format(player.name, message))
+        print("{} {} says: {}".format(timestamp, player.name, message))
 
     elif event == "InitGame":
         map_name, game_type, frag_limit, time_limit = args
@@ -272,17 +274,17 @@ def execute_command(game_time, event, args):
         num, address, name = args
 
         player = players[num]
-        players[num].name = name
+        players[num].name = name.strip()
         players[num].address = address
         if not player.connected:
             country = ip_db.country_name_by_addr(address)
-            print(">>> {} connected from {}".format(name, country))
+            print("{} >>> {} connected from {}".format(timestamp, name, country))
             player.connected = True
 
     elif event == "ClientDisconnect":
         num = args
         player = players[num]
-        print("<<< {} disconnected".format(player.name))
+        print("{} <<< {} disconnected".format(timestamp, player.name))
         remove_player(num)
 
     elif event == "ClientBegin":
@@ -329,7 +331,7 @@ def create_players(status):
         name, address, score = info
         players[num] = Player()
         # Don't blame me, read the comment in the Player class
-        players[num].name = name
+        players[num].name = name.strip()
         players[num].address = address
         players[num].score = score
 
