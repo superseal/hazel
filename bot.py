@@ -107,15 +107,16 @@ class Game():
 game = Game()
 print("Loading...")
 while 1:
-    #try:
-    proc_event = proc_read()
-    if not proc_event:
-        continue
-    event, args = parse_line(proc_event)
-    #print("   event {!r} args {!r}".format(event, args))
-    execute_command(game, event, args)
-    #except Exception as derp:
-    #    for frame in traceback.extract_tb(sys.exc_info()[2]):
-    #        fname, lineno, fn, text = frame
-    #        print("Error in %s on line %d" % (fname, lineno))
-    #    print(derp)
+    try:
+        proc_event = proc_read()
+        if not proc_event:
+            continue
+        event, args = parse_line(proc_event)
+        #print("   event {!r} args {!r}".format(event, args))
+        execute_command(game, event, args)
+    except Exception as derp:
+        for frame in traceback.extract_tb(sys.exc_info()[2]):
+            fname, lineno, fn, text = frame
+            print("Error in %s on line %d" % (fname, lineno))
+        print(derp)
+
