@@ -13,7 +13,7 @@ from ptyprocess import *
 from lib.game_consts import WORLD_NUM
 from lib.parser import parse_line
 from lib.actions import execute_command
-from lib.comm import rcon, proc_read, proc_write
+from lib.comm import proc_read, proc_write
 from lib.utils import log
 from config import LOW_GRAV, LOW_GRAV_MAPS
 
@@ -28,12 +28,12 @@ class Player():
         # Avoid executing ClientUserinfo events twice
         self.connected = False
         # Stats
-        self.longest_streak = 0
+        self.streak = 0
         self.headshots = 0
         self.knife_kills = 0
         self.nade_kills = 0
-        self.kills = collections.Counter()
-        self.deaths = collections.Counter()
+
+        self.longest_streak = 0
 
     def __repr__(self):
         return "<name {} | address {} [{}]>".format(self.name, self.address, self.connected)
@@ -59,11 +59,8 @@ class Game():
         
     def start(self, map_name, restrictions):
         # Get information from online players 
+        self.reset_stats()
         self.gear_restrictions = restrictions
-        map_name, player_info = self.get_status()
-        for num, info in player_info.items():
-            name, address, score = info
-            self.add_player(name.strip(), address, score)
         
     def reset_stats(self):
         self.first_kill = ""
@@ -74,25 +71,8 @@ class Game():
             p.headshots = 0
             p.knife_kills = 0
             p.nade_kills = 0
+            p.streak = 0
             p.longest_streak = 0
-
-    def get_status(self):
-        _, map_name, _, _, *player_info = [s.decode("UTF-8") for s in rcon("status").split(b"\n")]
-
-        status = {}
-        for p in player_info:
-            num, score, ping, rest = p.split(None, 3)
-            num = int(num)
-            # Parse nicknames with spaces
-            name, lastmsg, address, qport, rate = rest.rsplit(None, 4)
-            # Remove color codes
-            name = re.sub(r"\^\d", "", name)
-            # Drop port
-            address = address.split(":")[0]
-            status[num] = (name, address, score)
-        
-        map_name = map_name.split()[1]
-        return (map_name, status)
 
     def print_player_info(self):
         players = self.players
