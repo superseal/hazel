@@ -15,7 +15,7 @@ from lib.parser import parse_line
 from lib.actions import execute_command
 from lib.comm import proc_read, proc_write
 from lib.utils import log
-from config import LOW_GRAV, LOW_GRAV_MAPS
+from config import LOW_GRAV, MAP_LIST
 
 class Player():
     # Can't use a proper init function because the object needs to be created at ClientConnect
@@ -25,6 +25,7 @@ class Player():
         self.name = name
         self.address = address
         self.score = 0
+        self.gear = ""
         # Avoid executing ClientUserinfo events twice
         self.connected = False
         # Stats
@@ -50,17 +51,16 @@ class Game():
         
         # Having a "world" player makes Hit and Kill logic simpler
         self.add_player(WORLD_NUM, "world", "0.0.0.0")
+
+        self.mapcycle = []
+        # Keeps track of the current map so restarts don't alter the mapcycle
+        self.current_map = ""
     
     def add_player(self, num, name, address):
         self.players[num] = Player(name, address)
     
     def remove_player(self, num):
         del self.players[num]
-        
-    def start(self, map_name, restrictions):
-        # Get information from online players 
-        self.reset_stats()
-        self.gear_restrictions = restrictions
         
     def reset_stats(self):
         self.first_kill = ""

@@ -17,16 +17,16 @@ pty_buffer = ["" for i in range(5)]
 
 def proc_read():
     proc_event = re.sub(r"[\x08]", "", proc.readline())
-    print("proc_event {!r}".format(proc_event))
+    #print("proc_event {!r}".format(proc_event))
     if proc_event in pty_buffer:
-        print("** Ignoring line {}".format(proc_event))
+        #print("** Ignoring line {}".format(proc_event))
         return None
     else:
         return proc_event
 
 def proc_write(command):
     global pty_buffer
-    print("%%% Writing to proc: {}".format(command))
+    #print("%%% Writing to proc: {}".format(command))
     proc.write("\n")
     proc.write("{}\r\n".format(command))
     pty_buffer.append("{}\r\n".format(command))

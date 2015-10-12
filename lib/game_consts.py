@@ -75,3 +75,35 @@ DEATH_CAUSE = {
         41: "UT_MOD_MAC11",
         42: "UT_MOD_FLAG",
         43: "UT_MOD_GOOMBA"}
+
+WEAPON_CODES = {
+        "ber": "F",
+        "de": "G",
+        "spas": "H",
+        "mp5": "I",
+        "ump": "J",
+        "hk": "K",
+        "lr300": "L",
+        "g36": "M",
+        "psg": "N",
+        "sr8": "Z",
+        "ak": "a",
+        "negev": "c",
+        "m4": "e",
+        "glock": "f",
+        "colt": "g",
+        "mac": "h",
+        "he": "O",
+        "smoke": "Q",
+        "vest": "R",
+        "helmet": "W",
+        "silencer": "U",
+        "laser": "V",
+        "med": "T",
+        "tacs": "S",
+        "ammo": "X",
+}
+
+PISTOL_GEAR = ["ber", "de", "glock", "colt", "silencer", "laser", "he", "smoke"]
+GRENADE_GEAR = ["he", "smoke", "hk", "ammo"]
+

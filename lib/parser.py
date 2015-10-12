@@ -41,22 +41,18 @@ def parse_args(event, raw_args):
         raw_args = raw_args.split("\\")
         raw_args = [raw_args[i:i + 2] for i in range(1, len(raw_args), 2)]
 
-        var_names = ("ip", "name")
+        var_names = ("ip", "name", "gear")
         cvars = {cvar: cvalue for (cvar, cvalue) in raw_args if cvar in var_names}
         # Remove color codes
-        try:
-            cvars["name"] = re.sub(r"\^\d", "", cvars["name"])
-        except Exception as e:
-            print("Except: {}".format(e))
-            print("Error: cvars[name] does not exist, cvars {}, raw_args {}".format(cvars, raw_args))
+        cvars["name"] = re.sub(r"\^\d", "", cvars["name"])
         # Strip port from IP address
         cvars["ip"] = cvars["ip"].split(":")[0]
-        try:
+
+        # gear cvar is only in the second ClientUserinfo
+        if "gear" in cvars:
             return [num] + [cvars[v] for v in var_names]
-        except:
-            print("Name failed, got {}".format(raw_args))
-            print("Split raw_args are {}".format(raw_args))
-            return [num, "address derp", players[num].name]
+        else:
+            return [num] + [cvars["ip"], cvars["name"], "A"]
 
     elif event == "ClientUserinfoChanged":
         num = int(raw_args.split()[0])
@@ -86,6 +82,14 @@ def parse_args(event, raw_args):
         player_num = int(player_num)
 
         return [player_num, message]
+
+    elif event in ("restart", "map_restart"):
+        return None
+    
+    # Bot commands
+    elif event == ".":
+        command_name, command_args = raw_args.split(" ", 1)
+        return [command_name, command_args]
 
 def parse_line(raw_line):
     event, raw_args = parse_event(raw_line)
