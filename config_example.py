@@ -8,6 +8,10 @@ SCRIPT_PATH = ["/home/user/Urban Terror/urt.sh", "--long-arg"]
 # Path to GeoLiteCity.dat
 GEOIP_PATH = "/home/user/Documents/GeoLiteCity.dat"
 
+# Path to games.log
+# (!) Don't forget to set "g_loghits" to "1" in your server.cfg
+LOG_PATH = "/home/user/.q3a/q3ut4/games.log"
+
 # Low gravity settings
 LOW_GRAV = 200
 
@@ -88,7 +92,6 @@ MAP_LIST = {
     "ut4_terrorism8": "Cb-",
     "ut4_shahideen": "Cb-",
     "ut4_cave_beta": "Cb-",
-    "ut_lostbase": "Cb-",
     "wop_bath": "CbL", 
     "wop_padkitchen": "CbL",
     "wop_padlibrary": "CbL",

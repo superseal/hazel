@@ -13,7 +13,7 @@ from ptyprocess import *
 from lib.game_consts import WORLD_NUM
 from lib.parser import parse_line
 from lib.actions import execute_command
-from lib.comm import proc_read, proc_write
+from lib.comm import log_read, proc_write
 from lib.utils import log
 from config import LOW_GRAV, MAP_LIST
 
@@ -88,12 +88,11 @@ game = Game()
 print("Loading...")
 while 1:
     try:
-        proc_event = proc_read()
-        if not proc_event:
-            continue
-        event, args = parse_line(proc_event)
-        #print("   event {!r} args {!r}".format(event, args))
-        execute_command(game, event, args)
+        for log_event in log_read():
+            #print("log {}".format(log_event))
+            event, args = parse_line(log_event)
+            #print("   event {!r} args {!r}".format(event, args))
+            execute_command(game, event, args)
     except Exception as derp:
         for frame in traceback.extract_tb(sys.exc_info()[2]):
             fname, lineno, fn, text = frame

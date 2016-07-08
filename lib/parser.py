@@ -3,11 +3,11 @@ from .game_consts import HIT_ZONE, HIT_ITEM, DEATH_CAUSE, WORLD_NUM
 
 def parse_event(raw_line):
     # Separate event name from args
-    split_line = raw_line.lstrip(" ").rstrip("\n").split(" ", 1)
-    event = split_line[0].rstrip(":")
+    split_line = raw_line.lstrip(" ").rstrip("\n").split(" ", 2)
+    event = split_line[1].rstrip(":")
 
-    if len(split_line) > 1:
-        raw_args = split_line[1]
+    if len(split_line) > 2:
+        raw_args = split_line[2]
         return (event, raw_args)
     else:
         return (event, "")
